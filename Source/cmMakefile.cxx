@@ -12,6 +12,8 @@
 #include <cstring>
 #include <sstream>
 #include <utility>
+#include <iostream>
+#include <string>
 
 #include <cm/iterator>
 #include <cm/memory>
@@ -411,6 +413,75 @@ bool cmMakefile::ExecuteCommand(const cmListFileFunction& lff,
   if (this->IsFunctionBlocked(lff, status)) {
     // No error.
     return result;
+  }
+
+  static bool breakOnNext = true;
+  static std::set<std::pair<std::string, long>> breakpoints;
+
+  const auto fullPath = this->StateSnapshot.GetExecutionListFile();
+  bool breakNow = false;
+  if (breakOnNext) {
+    breakNow = true;
+    breakOnNext = false;
+  } else if (breakpoints.find(std::make_pair(
+               cmSystemTools::GetFilenameName(fullPath), lff.Line)) !=
+             breakpoints.end()) {
+    breakNow = true;
+  }
+
+  if (breakNow) {
+    std::cout << "Breakpoint hit at " << fullPath << ":" << lff.Line << " ("
+              << lff.Name.Original << ")\n";
+
+    bool debugContinue = false;
+    while (!debugContinue) {
+      std::string line;
+      std::cout << "> ";
+      std::getline(std::cin, line);
+
+      // Why the fuck is there no string split in C++?
+      std::istringstream iss(line);
+      const std::vector<std::string> tokens{
+        std::istream_iterator<std::string>(iss),
+        std::istream_iterator<std::string>()
+      };
+      const auto& command = tokens[0];
+
+      if (command == "c") {
+        debugContinue = true;
+      } else if (command == "s") {
+        breakOnNext = true;
+        debugContinue = true;
+      } else if (command == "bp" && tokens.size() >= 3) {
+        long line;
+        try {
+          line = std::stol(tokens[2]);
+        } catch (const std::exception& e) {
+          std::cout << "Breakpoint line number could not be parsed\n";
+        }
+        breakpoints.insert(std::make_pair(tokens[1], line));
+      } else if (command == "v") {
+        if (tokens.size() >= 2) {
+          const auto definition = this->StateSnapshot.GetDefinition(tokens[1]);
+          if (definition != nullptr) {
+            std::cout << *definition << "\n";
+          } else {
+            std::cout << "Variable " << tokens[1] << " is not defined\n";
+          }
+        } else {
+          for (auto key : this->StateSnapshot.ClosureKeys()) {
+            std::cout << key << ": \""
+                      << *this->StateSnapshot.GetDefinition(key) << "\"\n";
+          }
+        }
+      } else if (command == "sv" && tokens.size() >= 3) {
+        this->StateSnapshot.SetDefinition(tokens[1], tokens[2]);
+      } else if (command == "bt") {
+        this->Backtrace.PrintCallStack(std::cout);
+      } else {
+        std::cout << "Command " << command << " is not defined\n";
+      }
+    }
   }
 
   if (this->ExecuteCommandCallback) {
