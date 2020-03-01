@@ -1,16 +1,17 @@
 /* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
    file Copyright.txt or https://cmake.org/licensing for details.  */
-#include "cmConfigure.h"
+#include "cmStdIoConnection.h"
 
 #ifdef _WIN32
-#  include "io.h"
+#  include <io.h>
 #else
 #  include <unistd.h>
 #endif
 #include <cassert>
+#include <utility>
 
 #include "cmServerBase.h"
-#include "cmStdIoConnection.h"
+#include "cm_uv.h"
 
 cmStdIoConnection::cmStdIoConnection(
   cmConnectionBufferStrategy* bufferStrategy)

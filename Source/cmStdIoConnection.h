@@ -4,7 +4,10 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
+#include <string>
+
 #include "cmConnection.h"
+#include "cmUVHandlePtr.h"
 
 class cmServerBase;
 

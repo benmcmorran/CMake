@@ -2,10 +2,9 @@
    file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmServer.h"
 
-#include <algorithm>
 #include <cassert>
 #include <cstdint>
-#include <mutex>
+#include <functional>
 #include <utility>
 
 #include <cm/memory>
@@ -15,6 +14,7 @@
 
 #include "cm_jsoncpp_reader.h"
 #include "cm_jsoncpp_writer.h"
+#include "cm_uv.h"
 
 #include "cmConnection.h"
 #include "cmFileMonitor.h"

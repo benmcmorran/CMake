@@ -5,6 +5,11 @@
 #include <algorithm>
 #include <cassert>
 #include <iostream>
+#include <mutex>
+
+#include <cm/shared_mutex>
+
+#include "cmConnection.h"
 
 void on_signal(uv_signal_t* signal, int signum)
 {

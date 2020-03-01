@@ -4,11 +4,16 @@
 
 #include "cmConfigure.h" // IWYU pragma: keep
 
+#include <memory>
+#include <string>
 #include <vector>
 
 #include <cm/shared_mutex>
 
-#include "cmConnection.h"
+#include "cmUVHandlePtr.h"
+#include "cm_uv.h"
+
+class cmConnection;
 
 /***
  * This essentially hold and manages a libuv event queue and responds to

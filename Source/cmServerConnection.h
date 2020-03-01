@@ -9,9 +9,6 @@
 #include "cmConnection.h"
 #include "cmPipeConnection.h"
 #include "cmStdIoConnection.h"
-#include "cmUVHandlePtr.h"
-
-class cmServerBase;
 
 /***
  * This connection buffer strategy accepts messages in the form of
