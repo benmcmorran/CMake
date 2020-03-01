@@ -8,6 +8,7 @@
 
 #include "cmConnection.h"
 #include "cmPipeConnection.h"
+#include "cmStdIoConnection.h"
 #include "cmUVHandlePtr.h"
 
 class cmServerBase;
@@ -29,25 +30,6 @@ public:
 
 private:
   std::string RequestBuffer;
-};
-
-/***
- * Generic connection over std io interfaces -- tty
- */
-class cmStdIoConnection : public cmEventBasedConnection
-{
-public:
-  cmStdIoConnection(cmConnectionBufferStrategy* bufferStrategy);
-
-  void SetServer(cmServerBase* s) override;
-
-  bool OnConnectionShuttingDown() override;
-
-  bool OnServeStart(std::string* pString) override;
-
-private:
-  cm::uv_stream_ptr SetupStream(int file_id);
-  cm::uv_stream_ptr ReadStream;
 };
 
 /***
