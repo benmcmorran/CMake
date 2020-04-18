@@ -6,11 +6,14 @@
 #include "cmConfigure.h" // IWYU pragma: keep
 
 #include <cstddef>
+#include <functional>
 #include <iosfwd>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <cm/optional>
 
 #include "cmStateSnapshot.h"
 
@@ -22,6 +25,7 @@
  */
 
 class cmMessenger;
+class cmExecutionStatus;
 
 struct cmCommandContext
 {
@@ -179,8 +183,28 @@ std::vector<BT<std::string>> ExpandListWithBacktrace(
   std::string const& list,
   cmListFileBacktrace const& bt = cmListFileBacktrace());
 
-struct cmListFile
+struct cmListFileBase
 {
+  cmListFileBase() = default;
+  virtual ~cmListFileBase() = default;
+  cmListFileBase(const cmListFileBase&) = delete;
+  cmListFileBase& operator=(const cmListFileBase&) = delete;
+  cmListFileBase(cmListFileBase&&) = delete;
+  cmListFileBase& operator=(cmListFileBase&&) = delete;
+
+  virtual void Execute(
+    const std::function<cmExecutionStatus(const cmListFileFunction&)>&
+      commandExecutor) const = 0;
+};
+
+struct cmListFile : public cmListFileBase
+{
+  cmListFile() = default;
+
+  void Execute(
+    const std::function<cmExecutionStatus(const cmListFileFunction&)>&
+      commandExecutor) const override;
+
   bool ParseFile(const char* path, cmMessenger* messenger,
                  cmListFileBacktrace const& lfbt);
 
@@ -189,5 +213,14 @@ struct cmListFile
 
   std::vector<cmListFileFunction> Functions;
 };
+
+namespace cmListFileFactory {
+cm::optional<std::unique_ptr<cmListFileBase>> ParseFile(
+  const char* path, cmMessenger* messenger, cmListFileBacktrace const& lfbt);
+
+cm::optional<std::unique_ptr<cmListFileBase>> ParseString(
+  const char* str, const char* virtual_filename, cmMessenger* messenger,
+  cmListFileBacktrace const& lfbt);
+}
 
 #endif

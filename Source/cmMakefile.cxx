@@ -631,13 +631,13 @@ bool cmMakefile::ReadDependentFile(const std::string& filename,
 
   IncludeScope incScope(this, filenametoread, noPolicyScope);
 
-  cmListFile listFile;
-  if (!listFile.ParseFile(filenametoread.c_str(), this->GetMessenger(),
-                          this->Backtrace)) {
+  auto listFile = cmListFileFactory::ParseFile(
+    filenametoread.c_str(), this->GetMessenger(), this->Backtrace);
+  if (!listFile) {
     return false;
   }
 
-  this->ReadListFile(listFile, filenametoread);
+  this->ReadListFile(**listFile, filenametoread);
   if (cmSystemTools::GetFatalErrorOccured()) {
     incScope.Quiet();
   }
@@ -685,13 +685,13 @@ bool cmMakefile::ReadListFile(const std::string& filename)
 
   ListFileScope scope(this, filenametoread);
 
-  cmListFile listFile;
-  if (!listFile.ParseFile(filenametoread.c_str(), this->GetMessenger(),
-                          this->Backtrace)) {
+  auto listFile = cmListFileFactory::ParseFile(
+    filenametoread.c_str(), this->GetMessenger(), this->Backtrace);
+  if (!listFile) {
     return false;
   }
 
-  this->ReadListFile(listFile, filenametoread);
+  this->ReadListFile(**listFile, filenametoread);
   if (cmSystemTools::GetFatalErrorOccured()) {
     scope.Quiet();
   }
@@ -706,20 +706,21 @@ bool cmMakefile::ReadListFileAsString(const std::string& content,
 
   ListFileScope scope(this, filenametoread);
 
-  cmListFile listFile;
-  if (!listFile.ParseString(content.c_str(), virtualFileName.c_str(),
-                            this->GetMessenger(), this->Backtrace)) {
+  auto listFile =
+    cmListFileFactory::ParseString(content.c_str(), virtualFileName.c_str(),
+                                   this->GetMessenger(), this->Backtrace);
+  if (!listFile) {
     return false;
   }
 
-  this->ReadListFile(listFile, filenametoread);
+  this->ReadListFile(**listFile, filenametoread);
   if (cmSystemTools::GetFatalErrorOccured()) {
     scope.Quiet();
   }
   return true;
 }
 
-void cmMakefile::ReadListFile(cmListFile const& listFile,
+void cmMakefile::ReadListFile(cmListFileBase const& listFile,
                               std::string const& filenametoread)
 {
   // add this list file to the list of dependencies
@@ -738,18 +739,11 @@ void cmMakefile::ReadListFile(cmListFile const& listFile,
   this->MarkVariableAsUsed("CMAKE_CURRENT_LIST_DIR");
 
   // Run the parsed commands.
-  const size_t numberFunctions = listFile.Functions.size();
-  for (size_t i = 0; i < numberFunctions; ++i) {
+  listFile.Execute([this](const cmListFileFunction& lff) {
     cmExecutionStatus status(*this);
-    this->ExecuteCommand(listFile.Functions[i], status);
-    if (cmSystemTools::GetFatalErrorOccured()) {
-      break;
-    }
-    if (status.GetReturnInvoked()) {
-      // Exit early due to return command.
-      break;
-    }
-  }
+    this->ExecuteCommand(lff, status);
+    return status;
+  });
   this->CheckForUnusedVariables();
 
   this->AddDefinition("CMAKE_PARENT_LIST_FILE", currentParentFile);
@@ -1609,12 +1603,15 @@ void cmMakefile::Configure()
   assert(cmSystemTools::FileExists(currentStart, true));
   this->AddDefinition("CMAKE_PARENT_LIST_FILE", currentStart);
 
-  cmListFile listFile;
-  if (!listFile.ParseFile(currentStart.c_str(), this->GetMessenger(),
-                          this->Backtrace)) {
+  auto baseListFile = cmListFileFactory::ParseFile(
+    currentStart.c_str(), this->GetMessenger(), this->Backtrace);
+  if (!baseListFile) {
     return;
   }
-  if (this->IsRootMakefile()) {
+
+  auto listFilePtr = dynamic_cast<cmListFile*>((*baseListFile).get());
+  if (this->IsRootMakefile() && listFilePtr != nullptr) {
+    auto& listFile = *listFilePtr;
     bool hasVersion = false;
     // search for the right policy command
     for (cmListFileFunction const& func : listFile.Functions) {
@@ -1691,7 +1688,7 @@ void cmMakefile::Configure()
     }
   }
 
-  this->ReadListFile(listFile, currentStart);
+  this->ReadListFile(**baseListFile, currentStart);
   if (cmSystemTools::GetFatalErrorOccured()) {
     scope.Quiet();
   }

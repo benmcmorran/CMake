@@ -7,6 +7,9 @@
 #include <sstream>
 #include <utility>
 
+#include <cm/memory>
+
+#include "cmExecutionStatus.h"
 #include "cmListFileLexer.h"
 #include "cmMessageType.h"
 #include "cmMessenger.h"
@@ -163,6 +166,22 @@ bool cmListFileParser::Parse()
     }
   }
   return true;
+}
+
+void cmListFile::Execute(
+  const std::function<cmExecutionStatus(const cmListFileFunction&)>&
+    commandExecutor) const
+{
+  for (auto function : this->Functions) {
+    auto status = commandExecutor(function);
+    if (cmSystemTools::GetFatalErrorOccured()) {
+      break;
+    }
+    if (status.GetReturnInvoked()) {
+      // Exit early due to return command.
+      break;
+    }
+  }
 }
 
 bool cmListFile::ParseFile(const char* filename, cmMessenger* messenger,
@@ -525,4 +544,26 @@ std::vector<BT<std::string>> ExpandListWithBacktrace(
     result.emplace_back(std::move(i), bt);
   }
   return result;
+}
+
+cm::optional<std::unique_ptr<cmListFileBase>> cmListFileFactory::ParseFile(
+  const char* path, cmMessenger* messenger, cmListFileBacktrace const& lfbt)
+{
+  auto listFile = cm::make_unique<cmListFile>();
+  if (!listFile->ParseFile(path, messenger, lfbt)) {
+    return cm::nullopt;
+  }
+  return listFile;
+}
+
+cm::optional<std::unique_ptr<cmListFileBase>> cmListFileFactory::ParseString(
+  const char* str, const char* virtual_filename, cmMessenger* messenger,
+  cmListFileBacktrace const& lfbt)
+{
+  auto listFile = cm::make_unique<cmListFile>();
+  if (!listFile->ParseString(str, virtual_filename, messenger, lfbt))
+  {
+    return cm::nullopt;
+  }
+  return listFile;
 }

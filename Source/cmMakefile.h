@@ -1045,7 +1045,7 @@ private:
 
   void DoGenerate(cmLocalGenerator& lg);
 
-  void ReadListFile(cmListFile const& listFile,
+  void ReadListFile(cmListFileBase const& listFile,
                     const std::string& filenametoread);
 
   bool ParseDefineFlag(std::string const& definition, bool remove);
