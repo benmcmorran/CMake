@@ -617,6 +617,9 @@ macro (CMAKE_BUILD_UTILITIES)
     CMAKE_SET_TARGET_FOLDER(cmlibuv "Utilities/3rdParty")
   endif()
 
+  # Build duktape library.
+  add_subdirectory(Utilities/duktape)
+
   #---------------------------------------------------------------------
   # Use curses?
   if (UNIX)

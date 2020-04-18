@@ -870,7 +870,7 @@ endforeach()
 
 # create a library used by the command line and the GUI
 add_library(CMakeLib ${SRCS})
-target_link_libraries(CMakeLib cmsys
+target_link_libraries(CMakeLib cmsys duktape
   ${CMAKE_STD_LIBRARY}
   ${CMAKE_EXPAT_LIBRARIES} ${CMAKE_ZLIB_LIBRARIES}
   ${CMAKE_TAR_LIBRARIES}
