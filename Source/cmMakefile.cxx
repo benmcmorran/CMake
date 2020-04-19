@@ -739,11 +739,14 @@ void cmMakefile::ReadListFile(cmListFileBase const& listFile,
   this->MarkVariableAsUsed("CMAKE_CURRENT_LIST_DIR");
 
   // Run the parsed commands.
-  listFile.Execute([this](const cmListFileFunction& lff) {
-    cmExecutionStatus status(*this);
-    this->ExecuteCommand(lff, status);
-    return status;
-  });
+  listFile.Execute(
+    [this](const cmListFileFunction& lff) {
+      cmExecutionStatus status(*this);
+      this->ExecuteCommand(lff, status);
+      return status;
+    },
+    [this](const std::string& name) { return this->GetDefinition(name); },
+    this->GetMessenger());
   this->CheckForUnusedVariables();
 
   this->AddDefinition("CMAKE_PARENT_LIST_FILE", currentParentFile);

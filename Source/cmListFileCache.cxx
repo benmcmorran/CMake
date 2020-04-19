@@ -168,9 +168,9 @@ bool cmListFileParser::Parse()
   return true;
 }
 
-void cmListFile::Execute(
-  const std::function<cmExecutionStatus(const cmListFileFunction&)>&
-    commandExecutor) const
+void cmListFile::Execute(const CommandExecutor& commandExecutor,
+                         const VariableResolver& variableResolver,
+                         cmMessenger* messenger) const
 {
   for (auto function : this->Functions) {
     auto status = commandExecutor(function);
@@ -546,9 +546,27 @@ std::vector<BT<std::string>> ExpandListWithBacktrace(
   return result;
 }
 
+// TODO: remove these includes
+#include <iostream>
+#include <fstream>
+
 cm::optional<std::unique_ptr<cmListFileBase>> cmListFileFactory::ParseFile(
   const char* path, cmMessenger* messenger, cmListFileBacktrace const& lfbt)
 {
+  // TODO: share this logic with ParseString
+  std::ifstream infile{ path };
+  std::string file_contents{ std::istreambuf_iterator<char>(infile),
+                             std::istreambuf_iterator<char>() };
+  std::string prefix("// use cmakejs");
+  if (file_contents.compare(0, prefix.size(), prefix) == 0) {
+    try {
+      return cm::make_unique<cmJavaScriptFile>(file_contents.c_str(), path,
+                                               messenger, lfbt);
+    } catch (const std::runtime_error&) {
+      return cm::nullopt;
+    }
+  }
+
   auto listFile = cm::make_unique<cmListFile>();
   if (!listFile->ParseFile(path, messenger, lfbt)) {
     return cm::nullopt;
@@ -560,10 +578,130 @@ cm::optional<std::unique_ptr<cmListFileBase>> cmListFileFactory::ParseString(
   const char* str, const char* virtual_filename, cmMessenger* messenger,
   cmListFileBacktrace const& lfbt)
 {
+  // TODO: share this logic with ParseFile
+  std::string prefix("// use cmakejs");
+  if (prefix.compare(0, prefix.size(), str) == 0) {
+    try {
+      return cm::make_unique<cmJavaScriptFile>(str, virtual_filename,
+                                               messenger, lfbt);
+    } catch (const std::runtime_error&) {
+      return cm::nullopt;
+    }
+  }
+
   auto listFile = cm::make_unique<cmListFile>();
-  if (!listFile->ParseString(str, virtual_filename, messenger, lfbt))
-  {
+  if (!listFile->ParseString(str, virtual_filename, messenger, lfbt)) {
     return cm::nullopt;
   }
   return listFile;
+}
+
+cmJavaScriptFile::cmJavaScriptFile(const char* str,
+                                   const char* virtual_filename,
+                                   cmMessenger* messenger,
+                                   cmListFileBacktrace const& lfbt)
+  : Context(std::unique_ptr<duk_context, decltype(&duk_destroy_heap)>(
+      duk_create_heap_default(), duk_destroy_heap))
+{
+  // TODO: provide a fatal error handler instead of creating a default heap
+  if (!this->Context) {
+    throw std::runtime_error("Error allocating JS heap.");
+  }
+
+  // TODO: wrap the string push in a duk_safe_call
+  auto ctx = this->Context.get();
+  duk_push_string(ctx, virtual_filename);
+  auto result = duk_pcompile_string_filename(ctx, DUK_COMPILE_STRICT, str);
+  if (result != DUK_EXEC_SUCCESS) {
+    auto message = duk_safe_to_string(this->Context.get(), -1);
+    messenger->IssueMessage(MessageType::FATAL_ERROR, message, lfbt);
+    throw new std::runtime_error(message);
+  }
+}
+
+static duk_ret_t ExecuteCMakeCommandFromJavaScript(duk_context* ctx)
+{
+  // TODO: make safer
+  duk_push_current_function(ctx);
+  duk_get_prop_string(ctx, -1, "_native_exec_ptr");
+  auto commandExecutor =
+    (const cmListFileBase::CommandExecutor*)duk_get_pointer(ctx, -1);
+  duk_pop_2(ctx);
+
+  // This function is at the top of the stack (-1) and it won't have a line.
+  duk_inspect_callstack_entry(ctx, -2);
+  duk_get_prop_string(ctx, -1, "lineNumber");
+  auto line = duk_to_int(ctx, -1);
+  duk_pop_2(ctx);
+
+  // TODO: probably a better error code for this
+  auto argc = duk_get_top(ctx);
+  if (argc < 1) {
+    return DUK_RET_RANGE_ERROR;
+  }
+
+  cmListFileFunction function;
+  function.Name = duk_to_string(ctx, 0);
+  function.Line = line;
+
+  for (auto i = 1; i < argc; i++) {
+    auto value = duk_to_string(ctx, i);
+    auto arg = cmListFileArgument(value, cmListFileArgument::Quoted, line);
+    function.Arguments.push_back(arg);
+  }
+
+  auto status = (*commandExecutor)(function);
+  if (cmSystemTools::GetFatalErrorOccured()) {
+    return DUK_ERR_SYNTAX_ERROR;
+  }
+  if (status.GetReturnInvoked()) {
+    // TODO: something smarter probably needs to happen here
+  }
+
+  // Return undefined to JavaScript.
+  return 0;
+}
+
+static duk_ret_t ResolveCMakeVariableFromJavaScript(duk_context* ctx)
+{
+  // TODO: make safer
+  duk_push_current_function(ctx);
+  duk_get_prop_string(ctx, -1, "_native_get_ptr");
+  auto variableResolver =
+    (const cmListFileBase::VariableResolver*)duk_get_pointer(ctx, -1);
+  duk_pop_2(ctx);
+
+  auto name = duk_to_string(ctx, 0);
+  auto value = (*variableResolver)(name);
+  if (value == nullptr) {
+    // Return undefined to JavaScript if the CMake variable is not set.
+    return 0;
+  } else {
+    duk_push_string(ctx, value);
+    return 1;
+  }
+}
+
+void cmJavaScriptFile::Execute(const CommandExecutor& commandExecutor,
+                               const VariableResolver& variableResolver,
+                               cmMessenger* messenger) const
+{
+  // TODO: do these calls need to be safe?
+  auto ctx = this->Context.get();
+  auto idx =
+    duk_push_c_function(ctx, ExecuteCMakeCommandFromJavaScript, DUK_VARARGS);
+  duk_push_pointer(ctx, (void*)&commandExecutor);
+  duk_put_prop_string(ctx, idx, "_native_exec_ptr");
+  duk_put_global_string(ctx, "_cm_exec");
+
+  idx = duk_push_c_function(ctx, ResolveCMakeVariableFromJavaScript, 1);
+  duk_push_pointer(ctx, (void*)&variableResolver);
+  duk_put_prop_string(ctx, idx, "_native_get_ptr");
+  duk_put_global_string(ctx, "_cm_get");
+
+  if (duk_pcall(ctx, 0) != DUK_EXEC_SUCCESS) {
+    auto message = duk_safe_to_string(this->Context.get(), -1);
+    messenger->IssueMessage(MessageType::FATAL_ERROR, message);
+    cmSystemTools::SetFatalErrorOccured();
+  }
 }

@@ -17,6 +17,8 @@
 
 #include "cmStateSnapshot.h"
 
+#include "duktape.h"
+
 /** \class cmListFileCache
  * \brief A class to cache list file contents.
  *
@@ -185,6 +187,10 @@ std::vector<BT<std::string>> ExpandListWithBacktrace(
 
 struct cmListFileBase
 {
+  using CommandExecutor =
+    std::function<cmExecutionStatus(const cmListFileFunction&)>;
+  using VariableResolver = std::function<const char*(const std::string&)>;
+
   cmListFileBase() = default;
   virtual ~cmListFileBase() = default;
   cmListFileBase(const cmListFileBase&) = delete;
@@ -192,18 +198,18 @@ struct cmListFileBase
   cmListFileBase(cmListFileBase&&) = delete;
   cmListFileBase& operator=(cmListFileBase&&) = delete;
 
-  virtual void Execute(
-    const std::function<cmExecutionStatus(const cmListFileFunction&)>&
-      commandExecutor) const = 0;
+  virtual void Execute(const CommandExecutor& commandExecutor,
+                       const VariableResolver& variableResolver,
+                       cmMessenger* messenger) const = 0;
 };
 
 struct cmListFile : public cmListFileBase
 {
   cmListFile() = default;
 
-  void Execute(
-    const std::function<cmExecutionStatus(const cmListFileFunction&)>&
-      commandExecutor) const override;
+  void Execute(const CommandExecutor& commandExecutor,
+               const VariableResolver& variableResolver,
+               cmMessenger* messenger) const override;
 
   bool ParseFile(const char* path, cmMessenger* messenger,
                  cmListFileBacktrace const& lfbt);
@@ -212,6 +218,19 @@ struct cmListFile : public cmListFileBase
                    cmMessenger* messenger, cmListFileBacktrace const& lfbt);
 
   std::vector<cmListFileFunction> Functions;
+};
+
+class cmJavaScriptFile : public cmListFileBase
+{
+public:
+  cmJavaScriptFile(const char* str, const char* virtual_filename,
+                   cmMessenger* messenger, cmListFileBacktrace const& lfbt);
+  void Execute(const CommandExecutor& commandExecutor,
+               const VariableResolver& variableResolver,
+               cmMessenger* messenger) const override;
+
+private:
+  std::unique_ptr<duk_context, decltype(&duk_destroy_heap)> Context;
 };
 
 namespace cmListFileFactory {
