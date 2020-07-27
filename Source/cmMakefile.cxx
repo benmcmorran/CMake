@@ -494,6 +494,35 @@ bool cmMakefile::ExecuteCommand(const cmListFileFunction& lff,
         this->StateSnapshot.SetDefinition(tokens[1], tokens[2]);
       } else if (command == "bt") {
         this->Backtrace.PrintCallStack(std::cout);
+      } else if (command == "t") {
+        cmGlobalGenerator* gg = this->GetGlobalGenerator();
+        for (const auto& mf : gg->GetMakefiles()) {
+          for (const auto& target : mf->GetTargets()) {
+            std::cout << target.second.GetName() << "\n";
+          }
+        }
+      } else if (command == "tp") {
+        cmTarget* target = this->GetGlobalGenerator()->FindTarget(tokens[1]);
+        if (target == nullptr) {
+          std::cout << "Target " << tokens[1] << " is not defined.\n";
+        } else {
+          if (tokens.size() >= 3) {
+            cmProp property = target->GetProperty(tokens[2]);
+            if (property == nullptr) {
+              std::cout << "Target " << tokens[1] << " has no property "
+                        << tokens[2] << "\n";
+            } else {
+              std::cout << &property << "\n";
+            }
+          } else {
+            for (const auto& pair : target->GetProperties().GetList()) {
+              std::cout << pair.first << ": \"" << pair.second << "\"\n";
+            }
+          }
+        }
+      } else if (command == "stp") {
+        this->GetGlobalGenerator()->FindTarget(tokens[1])->SetProperty(
+          tokens[2], tokens[3]);
       } else {
         std::cout << "Command " << command << " is not defined\n";
       }
