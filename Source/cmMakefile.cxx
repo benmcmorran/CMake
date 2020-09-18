@@ -432,16 +432,21 @@ bool cmMakefile::ExecuteCommand(const cmListFileFunction& lff,
   }
 
   static bool breakOnNext = true;
+  static std::string breakOnFile;
   static std::set<std::pair<std::string, long>> breakpoints;
+  static std::set<std::pair<std::string, cmVariableWatch::WatchMethod>> dataBps;
 
   const auto fullPath = this->StateSnapshot.GetExecutionListFile();
+  const auto filename = cmSystemTools::GetFilenameName(fullPath);
   bool breakNow = false;
   if (breakOnNext) {
     breakNow = true;
     breakOnNext = false;
-  } else if (breakpoints.find(std::make_pair(
-               cmSystemTools::GetFilenameName(fullPath), lff.Line)) !=
+  } else if (breakpoints.find(std::make_pair(fullPath, lff.Line)) !=
              breakpoints.end()) {
+    breakNow = true;
+  } else if (filename == breakOnFile) {
+    breakOnFile.clear();
     breakNow = true;
   }
 
@@ -452,12 +457,12 @@ bool cmMakefile::ExecuteCommand(const cmListFileFunction& lff,
     bool debugContinue = false;
     while (!debugContinue) {
       std::string line;
-      std::cout << "> ";
+      std::cout << ">>> ";
       std::getline(std::cin, line);
 
       // Why the fuck is there no string split in C++?
       std::istringstream iss(line);
-      const std::vector<std::string> tokens{
+      std::vector<std::string> tokens{
         std::istream_iterator<std::string>(iss),
         std::istream_iterator<std::string>()
       };
@@ -466,8 +471,30 @@ bool cmMakefile::ExecuteCommand(const cmListFileFunction& lff,
       if (command == "c") {
         debugContinue = true;
       } else if (command == "s") {
+        // TODO: doesn't correctly handle leaving a file
+        breakOnFile = filename;
+        debugContinue = true;
+      } else if (command == "si") {
         breakOnNext = true;
         debugContinue = true;
+      } else if (command == "cbp") {
+        if (tokens.size() >= 2) {
+          std::replace(tokens[1].begin(), tokens[1].end(), '\\', '/');
+          tokens[1][0] = std::toupper(tokens[1][0]);
+          for (auto &it = breakpoints.begin(); it != breakpoints.end();) {
+            if ((*it).first == tokens[1]) {
+              it = breakpoints.erase(it);
+            } else {
+              ++it;
+            }
+          }
+        } else {
+          breakpoints.clear();
+        }
+      } else if (command == "bp" && tokens.size() == 1) {
+        for (const auto &pair : breakpoints) {
+          std::cout << pair.first << " " << pair.second << "\n";
+        }
       } else if (command == "bp" && tokens.size() >= 3) {
         long line;
         try {
@@ -475,7 +502,23 @@ bool cmMakefile::ExecuteCommand(const cmListFileFunction& lff,
         } catch (const std::exception& e) {
           std::cout << "Breakpoint line number could not be parsed\n";
         }
+        std::replace(tokens[1].begin(), tokens[1].end(), '\\', '/');
+        tokens[1][0] = std::toupper(tokens[1][0]);
         breakpoints.insert(std::make_pair(tokens[1], line));
+      } else if (command == "dbp") {
+        cmVariableWatch::WatchMethod method =
+          [](const std::string& variable, int method, void* data,
+             const char* newValue, const cmMakefile* mf) {
+            if (method == cmVariableWatch::VARIABLE_MODIFIED_ACCESS)
+              breakOnNext = true;
+          };
+        this->GetVariableWatch()->AddWatch(tokens[1], method);
+        dataBps.insert(std::make_pair(tokens[1], method));
+      } else if (command == "cdbp") {
+        for (const auto& pair : dataBps) {
+          this->GetVariableWatch()->RemoveWatch(pair.first, pair.second);
+        }
+        dataBps.clear();
       } else if (command == "v") {
         if (tokens.size() >= 2) {
           const auto definition = this->StateSnapshot.GetDefinition(tokens[1]);
@@ -493,7 +536,7 @@ bool cmMakefile::ExecuteCommand(const cmListFileFunction& lff,
       } else if (command == "sv" && tokens.size() >= 3) {
         this->StateSnapshot.SetDefinition(tokens[1], tokens[2]);
       } else if (command == "bt") {
-        this->Backtrace.PrintCallStack(std::cout);
+        this->Backtrace.PrintCallStack(std::cout, true);
       } else if (command == "t") {
         cmGlobalGenerator* gg = this->GetGlobalGenerator();
         for (const auto& mf : gg->GetMakefiles()) {
@@ -523,6 +566,15 @@ bool cmMakefile::ExecuteCommand(const cmListFileFunction& lff,
       } else if (command == "stp") {
         this->GetGlobalGenerator()->FindTarget(tokens[1])->SetProperty(
           tokens[2], tokens[3]);
+      } else if (command == "tco") {
+        cmTarget* target = this->GetGlobalGenerator()->FindTarget(tokens[1]);
+        if (target == nullptr) {
+          std::cout << "Target " << tokens[1] << " is not defined.\n";
+        } else {
+          for (const auto& option : target->GetCompileOptionsEntries()) {
+            std::cout << option << "\n";
+          }
+        }
       } else {
         std::cout << "Command " << command << " is not defined\n";
       }

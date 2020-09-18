@@ -433,7 +433,8 @@ void cmListFileBacktrace::PrintTitle(std::ostream& out) const
   out << (lfc.Line ? " at " : " in ") << lfc;
 }
 
-void cmListFileBacktrace::PrintCallStack(std::ostream& out) const
+void cmListFileBacktrace::PrintCallStack(std::ostream& out,
+                                         bool useFullPaths) const
 {
   // The call stack exists only if we have at least two calls on top
   // of the bottom.
@@ -456,7 +457,7 @@ void cmListFileBacktrace::PrintCallStack(std::ostream& out) const
       out << "Call Stack (most recent call first):\n";
     }
     cmListFileContext lfc = cur->Context;
-    if (!bottom.GetState()->GetIsInTryCompile()) {
+    if (!bottom.GetState()->GetIsInTryCompile() && !useFullPaths) {
       lfc.FilePath = bottom.GetDirectory().ConvertToRelPathIfNotContained(
         bottom.GetState()->GetSourceDirectory(), lfc.FilePath);
     }

@@ -131,7 +131,7 @@ public:
   void PrintTitle(std::ostream& out) const;
 
   // Print the call stack below the top of the backtrace.
-  void PrintCallStack(std::ostream& out) const;
+  void PrintCallStack(std::ostream& out, bool useFullPaths = false) const;
 
   // Get the number of 'frames' in this backtrace
   size_t Depth() const;
